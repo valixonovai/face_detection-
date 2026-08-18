@@ -15,8 +15,20 @@ from app.config.settings import CONFIG
 from app.dashboard.services import get_engine
 from app.db.database import SessionLocal
 from app.db.models import Department, Employee
+from app.workers.camera_worker import current_service
 
 bp = Blueprint("employees", __name__, url_prefix="/employees")
+
+
+def _refresh_face_cache() -> None:
+    """
+    Xodim ro'yxati o'zgargach tanish keshini darhol eskirtiradi — aks holda
+    yangi qo'shilgan xodim (yoki holati o'zgargani) 20 soniyagacha tanilmasdi.
+    Kuzatuv xizmati hali ishga tushmagan bo'lsa — hech narsa qilinmaydi.
+    """
+    service = current_service()
+    if service is not None:
+        service.matchers.invalidate()
 
 
 @bp.route("")
@@ -102,6 +114,7 @@ def add():
         )
         session.add(employee)
         session.commit()
+        _refresh_face_cache()
         flash(f"{name} muvaffaqiyatli qo'shildi.", "success")
     except IntegrityError:
         session.rollback()
@@ -121,6 +134,7 @@ def delete(employee_id: int):
         if employee:
             session.delete(employee)
             session.commit()
+            _refresh_face_cache()
             flash("Xodim o'chirildi.", "success")
     finally:
         session.close()
@@ -135,6 +149,8 @@ def toggle_status(employee_id: int):
         if employee:
             employee.status = "inactive" if employee.status == "active" else "active"
             session.commit()
+            # Faolsizlantirilgan xodim tanish keshidan chiqishi (yoki qaytishi) kerak
+            _refresh_face_cache()
     finally:
         session.close()
     return redirect(url_for("employees.index"))

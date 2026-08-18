@@ -23,6 +23,11 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = "attendance-dashboard-local"  # faqat lokal foydalanish uchun
 
+    # Jadval va boshlang'ich ma'lumotni shu yerda tayyorlaymiz — gunicorn
+    # (Docker/AWS) ilovani `create_app()` orqali import qiladi, `__main__`
+    # blokiga kirmaydi. Aks holda jadvallar yaratilmay, har sahifa xato berardi.
+    init_db()
+
     app.register_blueprint(overview_bp)
     app.register_blueprint(employees_bp)
     app.register_blueprint(departments_bp)
@@ -39,6 +44,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    init_db()
     cfg = CONFIG["dashboard"]
     app.run(host=cfg["host"], port=cfg["port"], debug=False, threaded=True)

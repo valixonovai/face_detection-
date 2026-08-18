@@ -1,89 +1,52 @@
 """
-Asosiy runner: barcha kameralarni ishga tushiradi, har birida yuzlarni aniqlab
-tanib, keldi/ketdi hodisalarini bazaga yozadi.
+Asosiy runner: barcha kameralarni fon xizmati sifatida ishga tushiradi
+(dashboard'siz). Kameralar, rollar va davomat qoidalari bazadan olinadi —
+xuddi dashboard ishlatadigan xizmatning o'zi.
 
 Ishlatish:
     python -m app.main
+
+Eslatma: dashboard'ning "Jonli kamera" sahifasi ham shu xizmatni ishga
+tushiradi. Ikkalasini bir vaqtda emas, faqat bittasini ishlating (lokal
+webcam qurilmasi bir vaqtda bitta jarayon tomonidan ochiladi).
 """
-import json
 import time
 
-from sqlalchemy import select
+from app.db.database import init_db
+from app.recognition.face_engine import FaceEngine
+from app.workers.camera_worker import get_service
 
-from app.attendance import AttendanceTracker
-from app.cameras.camera_stream import CameraStream
-from app.config.settings import CONFIG
-from app.db.database import SessionLocal, init_db
-from app.db.models import Employee
-from app.recognition.face_engine import FaceEngine, FaceMatcher
-
-EMPLOYEE_RELOAD_INTERVAL = 60.0  # soniya
-
-
-def load_employees() -> list[tuple[int, str, list[float]]]:
-    session = SessionLocal()
-    try:
-        rows = session.execute(select(Employee.id, Employee.full_name, Employee.embedding_json)).all()
-        return [(eid, name, json.loads(emb)) for eid, name, emb in rows]
-    finally:
-        session.close()
+STATUS_INTERVAL = 10.0  # soniya — holatni ekranga chiqarish oralig'i
 
 
 def main() -> None:
     init_db()
 
-    employees = load_employees()
-    if not employees:
-        print("Ogohlantirish: bazada birorta ham xodim yo'q. Avval `python -m app.recognition.enroll` bilan qo'shing.")
-    matcher = FaceMatcher(employees)
-    last_reload = time.monotonic()
+    service = get_service(FaceEngine)
+    service.start()
+    print("Kuzatuv xizmati ishga tushdi. Chiqish uchun Ctrl+C.")
 
-    engine = FaceEngine()
-    tracker = AttendanceTracker(SessionLocal)
-
-    streams = [
-        CameraStream.from_config(cam).start()
-        for cam in CONFIG["cameras"]
-    ]
-    frame_skip = CONFIG["recognition"]["frame_skip"]
-    skip_counters = {s.camera_id: 0 for s in streams}
-
-    print(f"{len(streams)} ta kamera ishga tushirildi. Chiqish uchun Ctrl+C.")
-
+    last_event_key = None
     try:
         while True:
-            now = time.monotonic()
-            if now - last_reload > EMPLOYEE_RELOAD_INTERVAL:
-                matcher = FaceMatcher(load_employees())
-                last_reload = now
-
-            for stream in streams:
-                if skip_counters[stream.camera_id] > 0:
-                    skip_counters[stream.camera_id] -= 1
-                    continue
-                skip_counters[stream.camera_id] = frame_skip
-
-                frame = stream.get_frame()
-                if frame is None:
-                    continue
-
-                faces = engine.detect(frame)
-                for face in faces:
-                    result = matcher.match(face["embedding"])
-                    if result is None:
-                        continue
-                    event = tracker.record(result["employee_id"], stream.camera_id, result["similarity"])
-                    if event:
-                        ts = event["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                        label = "KELDI" if event["event_type"] == "in" else "KETDI"
-                        print(f"[{ts}] {stream.camera_id}: {result['name']} — {label} (sim={result['similarity']:.2f})")
-
-            time.sleep(0.03)
+            time.sleep(STATUS_INTERVAL)
+            metrics = service.metrics()
+            print(
+                f"[{time.strftime('%H:%M:%S')}] "
+                f"kamera: {metrics['connected_count']}/{metrics['camera_count']} ulangan · "
+                f"FPS: {metrics['total_fps']}"
+            )
+            # Oxirgi hodisani (agar yangi bo'lsa) ko'rsatamiz
+            events = metrics.get("recent_events", [])
+            if events:
+                top = events[0]
+                key = (top["time"], top["name"], top["kind"])
+                if key != last_event_key:
+                    last_event_key = key
+                    print(f"    -> {top['time']} {top['name']} — {top['kind']} ({top['camera_name']})")
     except KeyboardInterrupt:
         print("\nTo'xtatilmoqda...")
-    finally:
-        for stream in streams:
-            stream.stop()
+        service.stop()
 
 
 if __name__ == "__main__":
