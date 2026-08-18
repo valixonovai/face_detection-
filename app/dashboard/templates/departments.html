@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Bo'limlar{% endblock %}
+{% block page_title %}Bo'limlar{% endblock %}
+{% block page_subtitle %}{{ departments|length }} ta bo'lim{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom: 1.5rem;">
+  <form method="post" action="{{ url_for('departments.add') }}" class="toolbar" style="margin: 0;">
+    <div class="field" style="flex: 1; min-width: 180px;">
+      <label for="name">Bo'lim nomi *</label>
+      <input type="text" id="name" name="name" required placeholder="Sotuv bo'limi">
+    </div>
+    <div class="field">
+      <label for="expected_start_time">Ish boshlanishi</label>
+      <input type="time" id="expected_start_time" name="expected_start_time">
+    </div>
+    <div class="field">
+      <label for="expected_end_time">Ish tugashi</label>
+      <input type="time" id="expected_end_time" name="expected_end_time">
+    </div>
+    <button type="submit" class="btn">Qo'shish</button>
+  </form>
+</div>
+
+{% if departments %}
+<div class="card" style="padding: 0;">
+  <table>
+    <thead>
+      <tr><th>Nomi</th><th>Ish vaqti</th><th>Xodimlar soni</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for d in departments %}
+      <tr>
+        <td>{{ d.name }}</td>
+        <td>
+          {% if d.expected_start_time or d.expected_end_time %}
+            {{ d.expected_start_time or '?' }} — {{ d.expected_end_time or '?' }}
+          {% else %}
+            <span style="color: var(--text-muted);">belgilanmagan</span>
+          {% endif %}
+        </td>
+        <td>{{ d.employee_count }}</td>
+        <td>
+          <form method="post" action="{{ url_for('departments.delete', department_id=d.id) }}"
+                onsubmit="return confirm('Bo\'limni o\'chirishni tasdiqlaysizmi? Bog\'liq xodimlar \'belgilanmagan\' holatiga o\'tadi.');">
+            <button type="submit" class="btn secondary" style="font-size: 0.75rem; padding: 0.3rem 0.65rem;">O'chirish</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-state">Hali birorta ham bo'lim qo'shilmagan.</div>
+{% endif %}
+{% endblock %}

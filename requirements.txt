@@ -1,0 +1,18 @@
+opencv-python==4.10.0.84
+insightface==0.7.3
+onnxruntime-gpu==1.20.2
+numpy==1.26.4
+PyYAML==6.0.2
+SQLAlchemy==2.0.35
+Flask==3.0.3
+python-dateutil==2.9.0.post0
+
+# GPU (CUDA 12 / cuDNN 9) runtime DLL'lari — to'liq CUDA Toolkit o'rnatmasdan
+# onnxruntime-gpu'ni ishlatish uchun. app/gpu_bootstrap.py shularni PATH'ga qo'shadi.
+nvidia-cuda-runtime-cu12
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+nvidia-cufft-cu12
+nvidia-curand-cu12
+nvidia-cusparse-cu12
+nvidia-cusolver-cu12

@@ -1,0 +1,38 @@
+services:
+  dashboard:
+    build: .
+    image: attendance-crm:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Baza va yuz rasmlari konteyner o'chsa ham saqlanib qoladi
+      - attendance-data:/data
+      # InsightFace modellari (~300 MB) bir marta yuklanadi
+      - model-cache:/models
+    environment:
+      DATA_DIR: /data
+      # AWS'da RDS PostgreSQL'ga o'tish uchun shu qatorni yoqing:
+      # DATABASE_URL: postgresql+psycopg2://user:parol@rds-endpoint:5432/attendance
+      SIMILARITY_THRESHOLD: "0.40"
+      FRAME_SKIP: "4"
+      DEBOUNCE_SECONDS: "300"
+      # Hikvision kameralarni shu yerda bering (config.yaml'ni ustidan yozadi).
+      # Parolni bu yerga yozmang — .env faylidan oling (docker compose avtomatik o'qiydi).
+      CAMERAS_JSON: >-
+        [{"id": "entrance_main",
+          "name": "Asosiy kirish eshigi",
+          "source_type": "rtsp",
+          "rtsp_url": "rtsp://${CAMERA_USER}:${CAMERA_PASSWORD}@${CAMERA_HOST}:554/Streaming/Channels/102",
+          "direction": "both"}]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  attendance-data:
+  model-cache:

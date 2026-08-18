@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Jonli kamera{% endblock %}
+{% block page_title %}Jonli kuzatuv{% endblock %}
+{% block page_subtitle %}{{ cameras|length }} ta kamera faol — barchasi bir sahifada{% endblock %}
+
+{% block content %}
+{% if not cameras %}
+<div class="card empty-state">
+  Faol kamera yo'q. <a href="{{ url_for('cameras.index') }}" style="color: var(--accent);">Kameralar sahifasida</a> qo'shing.
+</div>
+{% else %}
+<div class="live-layout">
+  <div>
+    <div class="cam-grid">
+      {% for cam in cameras %}
+      <div class="card cam-tile" style="padding: 0.6rem;">
+        <div class="cam-tile-head">
+          <span class="cam-tile-name">{{ cam.name }}</span>
+          {% if cam.role == 'entrance' %}
+            <span class="badge in">Kirish</span>
+          {% else %}
+            <span class="badge missing">Kuzatuv</span>
+          {% endif %}
+        </div>
+        <div class="cam-frame">
+          <img src="{{ url_for('live.feed', camera_id=cam.id) }}"
+               loading="lazy"
+               alt="{{ cam.name }}"
+               onclick="openFull('{{ url_for('live.feed', camera_id=cam.id) }}', '{{ cam.name|e }}')">
+        </div>
+        {% if cam.zone %}
+        <div class="cam-tile-zone">{{ cam.zone }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.75rem;">
+      Yashil — tanilgan xodim · To'q sariq — begona (kirish kamerasida qayd qilinadi) · Kulrang — noma'lum.
+      Kadrni bosib kattalashtiring.
+    </p>
+  </div>
+
+  <div class="card events-panel">
+    <div style="padding: 1rem 1.25rem 0.5rem; font-weight: 600;">Oxirgi hodisalar</div>
+    <div id="events-list" style="max-height: 70vh; overflow-y: auto;">
+      <div class="empty-state" style="padding: 1.5rem;">Kutilmoqda…</div>
+    </div>
+  </div>
+</div>
+
+<div id="full-overlay" class="full-overlay" onclick="closeFull()">
+  <div class="full-inner" onclick="event.stopPropagation()">
+    <div class="full-head">
+      <span id="full-title" style="font-weight: 600;"></span>
+      <button class="btn secondary" style="font-size: 0.8rem;" onclick="closeFull()">Yopish</button>
+    </div>
+    <img id="full-img" alt="">
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .live-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .cam-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+  }
+  .cam-tile { display: flex; flex-direction: column; gap: 0.5rem; }
+  .cam-tile-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .cam-tile-name { font-weight: 600; font-size: 0.9rem; }
+  .cam-frame {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .cam-frame img {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+    cursor: zoom-in;
+  }
+  .cam-tile-zone { color: var(--text-muted); font-size: 0.75rem; }
+
+  .events-panel { padding: 0; position: sticky; top: 1rem; }
+
+  /* Tor ekranda hodisalar paneli pastga tushadi */
+  @media (max-width: 900px) {
+    .live-layout { grid-template-columns: 1fr; }
+    .events-panel { position: static; }
+  }
+
+  .full-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 50;
+    padding: 2rem;
+    align-items: center; justify-content: center;
+  }
+  .full-overlay.open { display: flex; }
+  .full-inner { width: min(1100px, 100%); }
+  .full-head {
+    display: flex; align-items: center; justify-content: space-between;
+    color: #fff; margin-bottom: 0.6rem;
+  }
+  .full-inner img { width: 100%; border-radius: 8px; background: #000; display: block; }
+</style>
+<script>
+function openFull(src, title) {
+  const ov = document.getElementById("full-overlay");
+  document.getElementById("full-img").src = src;
+  document.getElementById("full-title").textContent = title;
+  ov.classList.add("open");
+}
+function closeFull() {
+  const ov = document.getElementById("full-overlay");
+  ov.classList.remove("open");
+  // Oqimni to'xtatamiz — ochiq qolsa GPU'ni bekorga band qiladi
+  document.getElementById("full-img").src = "";
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeFull(); });
+
+const KIND_LABEL = {
+  in: ["KELDI", "in"],
+  out: ["KETDI", "out"],
+  presence: ["ko'rindi", "missing"],
+  visitor_new: ["yangi begona", "out"],
+  visitor_seen: ["begona", "missing"],
+};
+
+async function refreshEvents() {
+  try {
+    const res = await fetch("{{ url_for('live.events') }}");
+    const data = await res.json();
+    const box = document.getElementById("events-list");
+    if (!box) return;
+
+    if (!data.recent_events || !data.recent_events.length) {
+      box.innerHTML = '<div class="empty-state" style="padding:1.5rem;">Hali hodisa yo\'q.</div>';
+      return;
+    }
+    box.innerHTML = data.recent_events.map(e => {
+      const [label, cls] = KIND_LABEL[e.kind] || [e.kind, "missing"];
+      const place = e.zone ? `${e.camera_name} · ${e.zone}` : e.camera_name;
+      return `<div style="padding:0.6rem 1.25rem; border-bottom:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center;">
+          <span style="font-weight:500;">${e.name}</span>
+          <span class="badge ${cls}">${label}</span>
+        </div>
+        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">${e.time} · ${place}</div>
+      </div>`;
+    }).join("");
+  } catch (err) { /* jim o'tkazamiz */ }
+}
+
+refreshEvents();
+setInterval(refreshEvents, 3000);
+</script>
+{% endblock %}

@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}Kameralar{% endblock %}
+{% block page_title %}Kameralar{% endblock %}
+{% block page_subtitle %}{{ cameras|length }} ta kamera sozlangan{% endblock %}
+
+{% block content %}
+{#
+  Ulanish maydonlari qo'shish va tahrirlash formalarida bir xil — shuning uchun
+  bitta makro. JS forma ichida `class` bo'yicha ishlaydi (`id` emas): sahifada
+  bir nechta forma bo'lgani uchun id'lar takrorlanib ketardi.
+#}
+{% macro connection_fields(cam=None) %}
+  {% set is_webcam = cam and cam.source_type == 'webcam' %}
+  {% set brand = (cam.brand if cam and cam.brand else default_brand) %}
+
+  <div class="toolbar" style="margin-bottom: 0.85rem;">
+    <div class="field" style="min-width: 170px;">
+      <label>Manba turi</label>
+      <select name="source_type" class="js-source-type">
+        <option value="rtsp" {{ 'selected' if not is_webcam }}>IP kamera (RTSP)</option>
+        <option value="webcam" {{ 'selected' if is_webcam }}>Kompyuter kamerasi</option>
+      </select>
+    </div>
+  </div>
+
+  {# ---------- Kompyuter kamerasi ---------- #}
+  <div class="js-webcam-block">
+    <div class="toolbar" style="margin-bottom: 0.5rem;">
+      <div class="field" style="min-width: 130px;">
+        <label>Qurilma raqami</label>
+        <input type="number" name="device_index" class="js-device-index" min="0"
+               value="{{ cam.device_index if cam and cam.device_index is not none else 0 }}">
+      </div>
+      <div class="field" style="min-width: 150px;">
+        <label>Backend</label>
+        <select name="backend" class="js-backend">
+          <option value="">Avtomatik</option>
+          {% for key in backends_local %}
+          <option value="{{ key }}" {{ 'selected' if cam and cam.backend == key }}>{{ key|upper }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="button" class="btn secondary js-detect-local">Kameralarni aniqlash</button>
+    </div>
+    <div class="hint" style="margin-bottom: 0.4rem;">
+      Bir xil raqam har backendda boshqa qurilmani bildiradi — "Aniqlash" tugmasi
+      to'g'ri juftlikni topib beradi.
+    </div>
+    <div class="js-local-result hint"></div>
+  </div>
+
+  {# ---------- IP kamera ---------- #}
+  <div class="js-rtsp-block">
+    <div class="toolbar" style="margin-bottom: 0.85rem;">
+      <div class="field" style="flex: 2; min-width: 180px;">
+        <label>IP manzil *</label>
+        <input type="text" name="host" class="js-host" placeholder="192.168.1.64"
+               value="{{ cam.host or '' if cam else '' }}" autocomplete="off">
+      </div>
+      <div class="field" style="min-width: 90px;">
+        <label>Port</label>
+        <input type="number" name="port" class="js-port" min="1" max="65535"
+               value="{{ cam.port or default_port if cam else default_port }}">
+      </div>
+      <div class="field" style="flex: 1; min-width: 160px;">
+        <label>Ishlab chiqaruvchi</label>
+        <select name="brand" class="js-brand">
+          {% for key, label in brands %}
+          <option value="{{ key }}" {{ 'selected' if key == brand }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field js-stream-field" style="min-width: 150px;">
+        <label>Oqim sifati</label>
+        <select name="stream_kind" class="js-stream-kind">
+          {% set stream_kind = (cam.stream_kind if cam and cam.stream_kind else default_stream) %}
+          <option value="sub" {{ 'selected' if stream_kind == 'sub' }}>Kichik (tavsiya)</option>
+          <option value="main" {{ 'selected' if stream_kind == 'main' }}>Asosiy (yuqori sifat)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="toolbar" style="margin-bottom: 0.85rem;">
+      <div class="field" style="flex: 1; min-width: 170px;">
+        <label>Foydalanuvchi nomi</label>
+        <input type="text" name="username" class="js-username" placeholder="admin"
+               value="{{ cam.username or '' if cam else '' }}" autocomplete="off">
+      </div>
+      <div class="field" style="flex: 1; min-width: 170px;">
+        <label>Parol</label>
+        <input type="password" name="password" class="js-password" autocomplete="new-password"
+               placeholder="{{ 'saqlangan — o‘zgartirmaslik uchun bo‘sh qoldiring' if cam and cam.password else '' }}">
+      </div>
+      <div class="field js-custom-path-field" style="flex: 2; min-width: 220px;">
+        <label>Oqim yo'li</label>
+        <input type="text" name="stream_path" class="js-stream-path"
+               placeholder="/live/ch00_1" value="{{ cam.stream_path or '' if cam else '' }}">
+      </div>
+    </div>
+
+    <div class="hint js-url-preview" style="margin-bottom: 0.85rem;"></div>
+  </div>
+
+  <div class="toolbar" style="margin-bottom: 0.5rem;">
+    <button type="button" class="btn secondary js-test">Ulanishni sinash</button>
+    <div class="js-test-result" style="font-size: 0.83rem; align-self: center;"></div>
+  </div>
+{% endmacro %}
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div style="font-weight: 600; margin-bottom: 0.25rem;">Yangi kamera qo'shish</div>
+  <div class="hint" style="margin-bottom: 1.25rem;">
+    <strong>Kirish kamerasi</strong> — davomat yozadi va begonalarni ham qayd qiladi.
+    <strong>Kuzatuv kamerasi</strong> — davomatga ta'sir qilmaydi, faqat "kim qaysi xonada edi" yozuvini yuritadi.
+  </div>
+
+  <form method="post" action="{{ url_for('cameras.add') }}" class="camera-form">
+    <div class="toolbar" style="margin-bottom: 1rem;">
+      <div class="field" style="flex: 2; min-width: 200px;">
+        <label>Kamera nomi *</label>
+        <input type="text" name="name" required placeholder="Asosiy kirish eshigi">
+      </div>
+      <div class="field" style="flex: 1; min-width: 150px;">
+        <label>Vazifasi</label>
+        <select name="role" class="js-role">
+          <option value="entrance">Kirish kamerasi (davomat)</option>
+          <option value="monitoring" selected>Kuzatuv kamerasi</option>
+        </select>
+      </div>
+      <div class="field js-direction-field" style="flex: 1; min-width: 140px;">
+        <label>Yo'nalish</label>
+        <select name="direction">
+          <option value="auto">Avtomatik (bitta eshik)</option>
+          <option value="in">Kirish — KELDI</option>
+          <option value="out">Chiqish — KETDI</option>
+        </select>
+      </div>
+      <div class="field" style="flex: 1; min-width: 160px;">
+        <label>Joy / xona nomi</label>
+        <input type="text" name="zone" placeholder="2-qavat koridori">
+      </div>
+    </div>
+
+    <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-bottom: 0.25rem;">
+      {{ connection_fields() }}
+    </div>
+
+    <button type="submit" class="btn" style="margin-top: 0.5rem;">Kamerani qo'shish</button>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+    <div>
+      <div style="font-weight: 600;">Tarmoqdan kamera topish</div>
+      <div class="hint">
+        Lokal tarmoqda RTSP porti ochiq qurilmalarni qidiradi{% if subnet %} ({{ subnet }}.1–254){% endif %}
+      </div>
+    </div>
+    <button type="button" class="btn secondary" onclick="scanNetwork()" id="scan-btn">Tarmoqni skanerlash</button>
+  </div>
+  <div id="scan-result" style="margin-top: 1rem; font-size: 0.85rem;"></div>
+</div>
+
+{% if cameras %}
+<div style="display: flex; flex-direction: column; gap: 1rem;">
+  {% for cam in cameras %}
+  {% set state = live.get(cam.id) %}
+  <div class="card" style="{{ 'opacity: 0.6;' if not cam.enabled }}">
+    <div style="display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: start;">
+      <div style="min-width: 220px;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-weight: 600;">{{ cam.name }}</span>
+          {% if cam.role == 'entrance' %}
+            <span class="badge in">Kirish</span>
+          {% else %}
+            <span class="badge missing">Kuzatuv</span>
+          {% endif %}
+          {% if not cam.enabled %}<span class="badge out">O'chirilgan</span>{% endif %}
+        </div>
+        <div class="hint" style="margin-top: 0.3rem;">
+          {{ cam.source_label }}
+          {% if cam.zone %} · {{ cam.zone }}{% endif %}
+          {% if cam.role == 'entrance' and cam.direction != 'auto' %}
+            · {{ 'KELDI yozadi' if cam.direction == 'in' else 'KETDI yozadi' }}
+          {% endif %}
+        </div>
+      </div>
+
+      <div style="text-align: right; min-width: 160px;">
+        {% if state %}
+          {% if state.connected %}
+            <span class="badge in">Ulangan</span>
+            <div class="hint" style="margin-top: 0.3rem; font-variant-numeric: tabular-nums;">
+              {{ state.fps }} FPS · {{ state.faces_recognized }}/{{ state.faces_detected }} yuz tanildi
+            </div>
+          {% else %}
+            <span class="badge out">Ulanmagan</span>
+            {% if state.last_error %}
+            <div style="color: var(--danger); font-size: 0.75rem; margin-top: 0.3rem;">{{ state.last_error }}</div>
+            {% endif %}
+          {% endif %}
+        {% else %}
+          <span class="badge missing">Kutish rejimida</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <details style="margin-top: 0.9rem;">
+      <summary style="cursor: pointer; color: var(--accent); font-size: 0.83rem; font-weight: 600;">Sozlash</summary>
+      <form method="post" action="{{ url_for('cameras.update', camera_id=cam.id) }}"
+            class="camera-form" data-camera-id="{{ cam.id }}" style="margin-top: 0.9rem;">
+        <div class="toolbar" style="margin-bottom: 0.85rem;">
+          <div class="field" style="flex: 2; min-width: 180px;">
+            <label>Nomi</label>
+            <input type="text" name="name" value="{{ cam.name }}">
+          </div>
+          <div class="field" style="flex: 1; min-width: 150px;">
+            <label>Vazifasi</label>
+            <select name="role" class="js-role">
+              <option value="entrance" {{ 'selected' if cam.role == 'entrance' }}>Kirish kamerasi</option>
+              <option value="monitoring" {{ 'selected' if cam.role == 'monitoring' }}>Kuzatuv kamerasi</option>
+            </select>
+          </div>
+          <div class="field js-direction-field" style="flex: 1; min-width: 140px;">
+            <label>Yo'nalish</label>
+            <select name="direction">
+              <option value="auto" {{ 'selected' if cam.direction == 'auto' }}>Avtomatik</option>
+              <option value="in" {{ 'selected' if cam.direction == 'in' }}>Kirish — KELDI</option>
+              <option value="out" {{ 'selected' if cam.direction == 'out' }}>Chiqish — KETDI</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 1; min-width: 150px;">
+            <label>Joy / xona</label>
+            <input type="text" name="zone" value="{{ cam.zone or '' }}">
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid var(--border); padding-top: 0.85rem;">
+          {{ connection_fields(cam) }}
+        </div>
+
+        <button type="submit" class="btn" style="margin-top: 0.5rem;">Saqlash</button>
+      </form>
+
+      <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+        <form method="post" action="{{ url_for('cameras.toggle', camera_id=cam.id) }}">
+          <button type="submit" class="btn secondary" style="font-size: 0.78rem;">
+            {{ "O'chirish (vaqtincha)" if cam.enabled else "Yoqish" }}
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('cameras.delete', camera_id=cam.id) }}"
+              onsubmit="return confirm('{{ cam.name }} tarmoqdan butunlay chiqariladi. Davom etilsinmi?');">
+          <button type="submit" class="btn secondary" style="font-size: 0.78rem;">Tarmoqdan chiqarish</button>
+        </form>
+      </div>
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card empty-state">Hali birorta ham kamera qo'shilmagan.</div>
+{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .hint { color: var(--text-muted); font-size: 0.8rem; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.3rem 0.6rem; margin: 0.2rem 0.3rem 0 0;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); font-size: 0.78rem; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip[disabled] { opacity: 0.5; cursor: default; }
+</style>
+<script>
+const TEST_URL = "{{ url_for('cameras.test') }}";
+const SCAN_URL = "{{ url_for('cameras.scan') }}";
+const LOCAL_URL = "{{ url_for('cameras.local') }}";
+const CUSTOM_BRAND = "{{ custom_brand }}";
+
+// Ishlab chiqaruvchi bo'yicha oqim yo'llari — faqat manzilni oldindan
+// ko'rsatish uchun. Haqiqiy manzil doim serverda yig'iladi.
+const BRAND_PATHS = {{ brand_paths | tojson }};
+
+function q(form, cls) { return form.querySelector("." + cls); }
+function val(form, cls) { const el = q(form, cls); return el ? el.value.trim() : ""; }
+
+function refresh(form) {
+  const isWebcam = val(form, "js-source-type") === "webcam";
+  q(form, "js-webcam-block").hidden = !isWebcam;
+  q(form, "js-rtsp-block").hidden = isWebcam;
+
+  const isCustom = val(form, "js-brand") === CUSTOM_BRAND;
+  q(form, "js-custom-path-field").hidden = !isCustom;
+  q(form, "js-stream-field").hidden = isCustom;
+
+  const roleSelect = q(form, "js-role");
+  const dirField = q(form, "js-direction-field");
+  if (roleSelect && dirField) dirField.hidden = roleSelect.value !== "entrance";
+
+  updatePreview(form);
+}
+
+// Yig'iladigan manzilni ko'rsatadi — parol o'rniga nuqtalar.
+function updatePreview(form) {
+  const box = q(form, "js-url-preview");
+  if (!box) return;
+  const host = val(form, "js-host");
+  if (!host) { box.textContent = "IP manzil kiritilgach, ulanish manzili shu yerda ko'rinadi."; return; }
+
+  const brand = val(form, "js-brand");
+  const path = brand === CUSTOM_BRAND
+    ? (val(form, "js-stream-path") || "/")
+    : ((BRAND_PATHS[brand] || {})[val(form, "js-stream-kind")] || "/");
+
+  const user = val(form, "js-username");
+  const passEl = q(form, "js-password");
+  const hasPass = passEl && (passEl.value || passEl.placeholder);
+  let creds = "";
+  if (user) creds = encodeURIComponent(user) + (hasPass ? ":•••" : "") + "@";
+
+  box.textContent = "Ulanish manzili: rtsp://" + creds + host + ":"
+    + (val(form, "js-port") || "554") + (path.startsWith("/") ? path : "/" + path);
+}
+
+function payload(form) {
+  const isWebcam = val(form, "js-source-type") === "webcam";
+  if (isWebcam) {
+    return {
+      source_type: "webcam",
+      device_index: parseInt(val(form, "js-device-index") || "0", 10),
+      backend: val(form, "js-backend"),
+    };
+  }
+  return {
+    source_type: "rtsp",
+    camera_id: form.dataset.cameraId || null,
+    host: val(form, "js-host"),
+    port: parseInt(val(form, "js-port") || "554", 10),
+    username: val(form, "js-username"),
+    password: q(form, "js-password").value,
+    brand: val(form, "js-brand"),
+    stream_kind: val(form, "js-stream-kind"),
+    stream_path: val(form, "js-stream-path"),
+  };
+}
+
+async function testConnection(form) {
+  const box = q(form, "js-test-result");
+  box.style.color = "var(--text-muted)";
+  box.textContent = "Sinalmoqda…";
+  try {
+    const res = await fetch(TEST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload(form)),
+    });
+    const data = await res.json();
+    // "busy" — xato emas, ogohlantirish: qurilma allaqachon ishlatilyapti
+    box.style.color = data.state === "busy"
+      ? "var(--text-muted)"
+      : (data.ok ? "var(--success)" : "var(--danger)");
+    box.textContent = data.message;
+  } catch (err) {
+    box.style.color = "var(--danger)";
+    box.textContent = "Sinash amalga oshmadi: " + err.message;
+  }
+}
+
+async function detectLocal(form, btn) {
+  const box = q(form, "js-local-result");
+  btn.disabled = true;
+  btn.textContent = "Qidirilmoqda…";
+  box.textContent = "Bu bir necha soniya davom etadi…";
+  try {
+    const res = await fetch(LOCAL_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const data = await res.json();
+    let html = "";
+    if (data.devices.length) {
+      html += data.devices.map(d => `
+        <button type="button" class="chip" data-index="${d.index}" data-backend="${d.backend}">
+          ${d.backend.toUpperCase()} №${d.index} · ${d.width}×${d.height}${d.usable ? "" : " · qora kadr"}
+        </button>`).join("");
+    }
+    if (data.in_use.length) {
+      html += data.in_use.map(u => `
+        <button type="button" class="chip" disabled>
+          ${u.backend.toUpperCase()} №${u.index} · band (qo'shilgan)
+        </button>`).join("");
+    }
+    box.innerHTML = html || "Kamera topilmadi.";
+    box.querySelectorAll(".chip[data-index]").forEach(chip => {
+      chip.addEventListener("click", () => {
+        q(form, "js-device-index").value = chip.dataset.index;
+        q(form, "js-backend").value = chip.dataset.backend;
+      });
+    });
+  } catch (err) {
+    box.textContent = "Aniqlash amalga oshmadi: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Kameralarni aniqlash";
+  }
+}
+
+function bindForm(form) {
+  ["js-source-type", "js-brand", "js-stream-kind", "js-stream-path",
+   "js-host", "js-port", "js-username", "js-password", "js-role"].forEach(cls => {
+    const el = q(form, cls);
+    if (el) el.addEventListener("input", () => refresh(form));
+  });
+  const testBtn = q(form, "js-test");
+  if (testBtn) testBtn.addEventListener("click", () => testConnection(form));
+  const detectBtn = q(form, "js-detect-local");
+  if (detectBtn) detectBtn.addEventListener("click", () => detectLocal(form, detectBtn));
+  refresh(form);
+}
+
+async function scanNetwork() {
+  const btn = document.getElementById("scan-btn");
+  const box = document.getElementById("scan-result");
+  btn.disabled = true;
+  btn.textContent = "Skanerlanmoqda…";
+  box.textContent = "Bu bir necha soniya davom etadi…";
+  try {
+    const res = await fetch(SCAN_URL, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    const data = await res.json();
+    if (!data.devices.length) {
+      box.textContent = "Qurilma topilmadi. Kameralar shu tarmoqda ekanini tekshiring.";
+    } else {
+      box.innerHTML = data.devices.map(d => `
+        <div style="padding:0.45rem 0; border-bottom:1px solid var(--border); display:flex; gap:0.6rem; align-items:center;">
+          <strong>${d.host}</strong>
+          ${d.rtsp ? '<span class="badge in">RTSP</span>' : '<span class="badge missing">ONVIF?</span>'}
+          <button type="button" class="btn secondary" style="font-size:0.72rem; padding:0.2rem 0.6rem;"
+                  data-host="${d.host}">Shu manzilni ishlatish</button>
+        </div>`).join("");
+      box.querySelectorAll("button[data-host]").forEach(btn => {
+        btn.addEventListener("click", () => useHost(btn.dataset.host));
+      });
+    }
+  } catch (err) {
+    box.textContent = "Skanerlash amalga oshmadi: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Tarmoqni skanerlash";
+  }
+}
+
+// Topilgan manzilni yuqoridagi "yangi kamera" formasiga qo'yadi.
+function useHost(host) {
+  const form = document.querySelector(".camera-form");
+  q(form, "js-source-type").value = "rtsp";
+  q(form, "js-host").value = host;
+  refresh(form);
+  q(form, "js-username").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("form.camera-form").forEach(bindForm);
+});
+</script>
+{% endblock %}

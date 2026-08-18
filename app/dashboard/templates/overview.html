@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Umumiy ko'rinish{% endblock %}
+{% block page_title %}Umumiy ko'rinish{% endblock %}
+{% block page_subtitle %}Ish kuni: {{ day }}{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  <div class="card stat-card">
+    <div class="value">{{ present_count }}</div>
+    <div class="label">Bugun kelgan</div>
+  </div>
+  <div class="card stat-card">
+    <div class="value">{{ total_employees }}</div>
+    <div class="label">Jami xodim</div>
+  </div>
+  <div class="card stat-card">
+    <div class="value">{{ total_employees - present_count if total_employees > present_count else 0 }}</div>
+    <div class="label">Kelmagan</div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <form method="get" class="toolbar" style="margin: 0;">
+    <div class="field">
+      <label for="date">Sana</label>
+      <input type="date" id="date" name="date" value="{{ day }}" onchange="this.form.submit()">
+    </div>
+  </form>
+</div>
+
+<div class="card" style="padding: 0;">
+  <table>
+    <thead>
+      <tr><th>Xodim</th><th>Keldi</th><th>Ketdi</th><th>Hodisalar</th></tr>
+    </thead>
+    <tbody>
+      {% for row in summary %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td><span class="badge {{ 'in' if row.check_in != '-' else 'missing' }}">{{ row.check_in }}</span></td>
+        <td><span class="badge {{ 'out' if row.check_out != '-' else 'missing' }}">{{ row.check_out }}</span></td>
+        <td>{{ row.events }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="empty-state">Bu kunda hech kim qayd etilmagan.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

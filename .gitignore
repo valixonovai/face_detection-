@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/attendance.db
+data/enrolled_faces/*
+!data/enrolled_faces/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+app/config/config.local.yaml
+.env
+data/visitors/*
+!data/visitors/.gitkeep

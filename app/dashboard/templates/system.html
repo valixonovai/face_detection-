@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Tizim{% endblock %}
+{% block page_title %}Tizim ko'rsatkichlari{% endblock %}
+{% block page_subtitle %}Kameralar, model va ishlash holati{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  <div class="card stat-card">
+    <div class="label">Umumiy tezlik</div>
+    <div class="value" id="m-fps">{{ metrics.total_fps if metrics else '—' }}<span style="font-size: 0.95rem; font-weight: 500;"> FPS</span></div>
+    <div class="label">barcha kameralar bo'yicha</div>
+  </div>
+  <div class="card stat-card">
+    <div class="label">Ulangan kameralar</div>
+    <div class="value"><span id="m-connected">{{ metrics.connected_count if metrics else 0 }}</span> / <span id="m-total">{{ metrics.camera_count if metrics else cameras|length }}</span></div>
+    <div class="label">faol oqimlar</div>
+  </div>
+  <div class="card stat-card">
+    <div class="label">Hisoblash qurilmasi</div>
+    <div class="value" style="font-size: 1.25rem;">
+      {% if gpu.gpu_enabled %}GPU (CUDA){% else %}CPU{% endif %}
+    </div>
+    <div class="label">
+      {% if active_providers %}
+        faol: {{ active_providers[0].replace('ExecutionProvider', '') }}
+      {% else %}
+        model hali yuklanmagan
+      {% endif %}
+    </div>
+  </div>
+  <div class="card stat-card">
+    <div class="label">Ma'lumotlar bazasi</div>
+    <div class="value">{{ log_count }}</div>
+    <div class="label">{{ employee_count }} faol xodim</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem; padding: 0;">
+  <div style="padding: 1.25rem 1.25rem 0.75rem;">
+    <div style="font-weight: 600;">Kameralar</div>
+    <div style="color: var(--text-muted); font-size: 0.8rem;">Sozlangan video manbalar</div>
+  </div>
+  {% set live = {} %}
+  {% if metrics %}{% for c in metrics.cameras %}{% set _ = live.update({c.id: c}) %}{% endfor %}{% endif %}
+  <table>
+    <thead>
+      <tr><th>Nomi</th><th>Vazifasi</th><th>Manba</th><th>FPS</th><th>Holat</th></tr>
+    </thead>
+    <tbody>
+      {% for cam in cameras %}
+      {% set state = live.get(cam.id) %}
+      <tr>
+        <td>{{ cam.name }}{% if cam.zone %}<div style="color: var(--text-muted); font-size: 0.75rem;">{{ cam.zone }}</div>{% endif %}</td>
+        <td>
+          {% if cam.role == 'entrance' %}<span class="badge in">Kirish</span>
+          {% else %}<span class="badge missing">Kuzatuv</span>{% endif %}
+        </td>
+        <td style="color: var(--text-muted); font-size: 0.8rem;">{{ cam.source_label }}</td>
+        <td style="font-variant-numeric: tabular-nums;">{{ state.fps if state else '—' }}</td>
+        <td>
+          {% if not cam.enabled %}
+            <span class="badge out">O'chirilgan</span>
+          {% elif state and state.connected %}
+            <span class="badge in">Ulangan</span>
+          {% elif state %}
+            <span class="badge out">Ulanmagan</span>
+          {% else %}
+            <span class="badge missing">Kutish rejimida</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty-state">Kamera qo'shilmagan.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+  <div class="card">
+    <div style="font-weight: 600; margin-bottom: 0.9rem;">Model sozlamalari</div>
+    <table>
+      <tbody>
+        <tr><td style="color: var(--text-muted);">Model</td><td style="text-align: right;">{{ recognition.model_name }}</td></tr>
+        <tr><td style="color: var(--text-muted);">Tanish chegarasi</td><td style="text-align: right;">{{ recognition.similarity_threshold }}</td></tr>
+        <tr><td style="color: var(--text-muted);">Aniqlash o'lchami</td><td style="text-align: right;">{{ recognition.det_size[0] }}×{{ recognition.det_size[1] }}</td></tr>
+        <tr><td style="color: var(--text-muted);">Kadr o'tkazish</td><td style="text-align: right;">har {{ recognition.frame_skip + 1 }}-kadr</td></tr>
+        <tr><td style="color: var(--text-muted);">O'rtacha o'xshashlik</td><td style="text-align: right;">{{ avg_similarity if avg_similarity else '—' }}</td></tr>
+      </tbody>
+    </table>
+    <div style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.9rem; line-height: 1.5;">
+      Chegara qanchalik past bo'lsa, tanish shunchalik "yumshoq" (ko'zoynak/yon qarash
+      bilan ham taniydi, lekin xato tanish xavfi ortadi). 0.35–0.45 oralig'i tavsiya etiladi.
+      Sozlash: <code>app/config/config.yaml</code>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight: 600; margin-bottom: 0.9rem;">Davomat qoidalari</div>
+    <table>
+      <tbody>
+        <tr><td style="color: var(--text-muted);">Takror yozuv oralig'i</td><td style="text-align: right;">{{ attendance.debounce_seconds }} soniya</td></tr>
+        <tr><td style="color: var(--text-muted);">Ish kuni boshlanishi</td><td style="text-align: right;">{{ attendance.day_boundary_hour }}:00</td></tr>
+      </tbody>
+    </table>
+    <div style="font-weight: 600; margin: 1.25rem 0 0.9rem;">Muhit</div>
+    <table>
+      <tbody>
+        <tr><td style="color: var(--text-muted);">Python</td><td style="text-align: right;">{{ python_version }}</td></tr>
+        <tr><td style="color: var(--text-muted);">Tizim</td><td style="text-align: right;">{{ platform_name }}</td></tr>
+        <tr><td style="color: var(--text-muted);">Ishlash vaqti</td><td style="text-align: right;" id="m-uptime">
+          {{ metrics.uptime_seconds if metrics else 0 }} s
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<script>
+// Jonli kamera ishlayotgan bo'lsa ko'rsatkichlarni davriy yangilaymiz
+setInterval(async () => {
+  try {
+    const res = await fetch("/system/metrics.json");
+    const m = await res.json();
+    if (!m.running) return;
+    document.getElementById("m-fps").firstChild.nodeValue = m.total_fps;
+    document.getElementById("m-connected").textContent = m.connected_count;
+    document.getElementById("m-total").textContent = m.camera_count;
+    document.getElementById("m-uptime").textContent = m.uptime_seconds + " s";
+  } catch (e) { /* server javob bermasa jim o'tkazamiz */ }
+}, 3000);
+</script>
+{% endblock %}

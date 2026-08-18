@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Statistika{% endblock %}
+{% block page_title %}Statistika{% endblock %}
+{% block page_subtitle %}Ish kuni: {{ day }}{% endblock %}
+
+{% block content %}
+<form method="get" class="toolbar">
+  <div class="field">
+    <label for="date">Sana</label>
+    <input type="date" id="date" name="date" value="{{ day }}" onchange="this.form.submit()">
+  </div>
+</form>
+
+<div class="stat-grid">
+  <div class="card stat-card">
+    <div class="label">Davomat darajasi</div>
+    <div class="value" style="font-size: 2.4rem;">{{ summary.attendance_rate }}%</div>
+    <div class="label">{{ summary.present }} / {{ summary.total }} xodim</div>
+  </div>
+  <div class="card stat-card">
+    <div class="label">Kelmagan</div>
+    <div class="value">{{ summary.absent }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="label">Kechikkan</div>
+    <div class="value">{{ summary.late }}</div>
+    <div class="label">jami {{ summary.total_late_minutes }} daqiqa</div>
+  </div>
+  <div class="card stat-card">
+    <div class="label">O'rtacha ish vaqti</div>
+    <div class="value">{{ summary.avg_worked_hours }}<span style="font-size: 1rem; font-weight: 500;"> soat</span></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div style="font-weight: 600; margin-bottom: 0.25rem;">Davomat dinamikasi</div>
+  <div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 1.25rem;">
+    Oxirgi 14 kundagi kunlik davomat foizi
+  </div>
+  {% if trend|length %}
+  <div style="overflow-x: auto;">
+    {% set chart_w = 720 %}
+    {% set chart_h = 200 %}
+    {% set pad_l = 38 %}
+    {% set pad_r = 46 %}
+    {% set pad_t = 12 %}
+    {% set pad_b = 28 %}
+    {% set plot_w = chart_w - pad_l - pad_r %}
+    {% set plot_h = chart_h - pad_t - pad_b %}
+    {% set n = trend|length %}
+    <svg viewBox="0 0 {{ chart_w }} {{ chart_h }}" width="100%" height="{{ chart_h }}"
+         role="img" aria-label="Oxirgi 14 kundagi davomat foizi grafigi"
+         style="display:block; min-width: 560px;">
+      {% for tick in [0, 25, 50, 75, 100] %}
+        {% set y = pad_t + plot_h - (tick / 100 * plot_h) %}
+        <line x1="{{ pad_l }}" y1="{{ y }}" x2="{{ pad_l + plot_w }}" y2="{{ y }}"
+              stroke="var(--grid)" stroke-width="1"/>
+        <text x="{{ pad_l - 8 }}" y="{{ y + 4 }}" text-anchor="end"
+              font-size="10" fill="var(--text-muted)"
+              style="font-variant-numeric: tabular-nums;">{{ tick }}%</text>
+      {% endfor %}
+
+      {% set points = [] %}
+      {% for row in trend %}
+        {% set x = pad_l + (loop.index0 * plot_w / (n - 1 if n > 1 else 1)) %}
+        {% set y = pad_t + plot_h - (row.attendance_rate / 100 * plot_h) %}
+        {% set _ = points.append(x|round(1)|string ~ "," ~ y|round(1)|string) %}
+      {% endfor %}
+
+      <polyline points="{{ points|join(' ') }}" fill="none" stroke="var(--series-1)"
+                stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+
+      {% for row in trend %}
+        {% set x = pad_l + (loop.index0 * plot_w / (n - 1 if n > 1 else 1)) %}
+        {% set y = pad_t + plot_h - (row.attendance_rate / 100 * plot_h) %}
+        <circle cx="{{ x }}" cy="{{ y }}" r="4.5" fill="var(--series-1)"
+                stroke="var(--surface)" stroke-width="2">
+          <title>{{ row.label }} — {{ row.attendance_rate }}% ({{ row.present }} kelgan, {{ row.absent }} kelmagan)</title>
+        </circle>
+        {% if loop.index0 % 2 == 0 or loop.last %}
+        <text x="{{ x }}" y="{{ chart_h - 8 }}" text-anchor="middle"
+              font-size="10" fill="var(--text-muted)">{{ row.label }}</text>
+        {% endif %}
+        {% if loop.last %}
+        <text x="{{ x + 10 }}" y="{{ y + 4 }}" font-size="12" font-weight="600"
+              fill="var(--text)" style="font-variant-numeric: tabular-nums;">{{ row.attendance_rate }}%</text>
+        {% endif %}
+      {% endfor %}
+    </svg>
+  </div>
+  {% else %}
+  <div class="empty-state">Ma'lumot yo'q.</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div style="font-weight: 600; margin-bottom: 0.25rem;">Bo'limlar kesimida</div>
+  <div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 1.25rem;">
+    Har bir bo'limdagi davomat darajasi
+  </div>
+  {% if by_department %}
+  <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+    {% for row in by_department %}
+    <div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem; font-size: 0.84rem;">
+        <span>{{ row.department }}</span>
+        <span style="color: var(--text-muted); font-variant-numeric: tabular-nums;">
+          {{ row.present }}/{{ row.total }} · {{ row.attendance_rate }}%
+        </span>
+      </div>
+      <div style="height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden;">
+        <div style="width: {{ row.attendance_rate }}%; height: 100%; background: var(--series-1); border-radius: 5px;"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">Bo'limlar bo'yicha ma'lumot yo'q.</div>
+  {% endif %}
+</div>
+
+<div class="card" style="padding: 0;">
+  <div style="padding: 1.25rem 1.25rem 0.75rem;">
+    <div style="font-weight: 600;">Eng ko'p kechikkanlar</div>
+    <div style="color: var(--text-muted); font-size: 0.8rem;">Shu kundagi kechikish daqiqalari</div>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Xodim</th><th>Bo'lim</th><th>Kechikish</th></tr>
+    </thead>
+    <tbody>
+      {% for row in late_list %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td>{{ row.department }}</td>
+        <td style="font-variant-numeric: tabular-nums;">
+          <span class="badge out">{{ row.late_minutes }} daq</span>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="empty-state">Kechikkanlar yo'q.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

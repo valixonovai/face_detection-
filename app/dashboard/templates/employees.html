@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Xodimlar{% endblock %}
+{% block page_title %}Xodimlar{% endblock %}
+{% block page_subtitle %}{{ employees|length }} ta xodim{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom: 1.5rem;">
+  <form method="post" action="{{ url_for('employees.add') }}" id="enroll-form" enctype="multipart/form-data">
+    <div class="toolbar" style="margin-bottom: 1rem;">
+      <div class="field" style="flex: 1; min-width: 180px;">
+        <label for="full_name">To'liq ism *</label>
+        <input type="text" id="full_name" name="full_name" required placeholder="Aziz Karimov">
+      </div>
+      <div class="field" style="flex: 1; min-width: 140px;">
+        <label for="external_code">Xodim kodi</label>
+        <input type="text" id="external_code" name="external_code" placeholder="EMP001">
+      </div>
+      <div class="field" style="flex: 1; min-width: 160px;">
+        <label for="department_id">Bo'lim</label>
+        <select id="department_id" name="department_id">
+          <option value="">— Belgilanmagan —</option>
+          {% for d in departments %}
+          <option value="{{ d.id }}">{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="toolbar" style="margin-bottom: 1rem;">
+      <div class="field" style="flex: 1; min-width: 160px;">
+        <label for="position">Lavozim</label>
+        <input type="text" id="position" name="position" placeholder="Menejer">
+      </div>
+      <div class="field" style="flex: 1; min-width: 140px;">
+        <label for="phone">Telefon</label>
+        <input type="text" id="phone" name="phone" placeholder="+998 90 123 45 67">
+      </div>
+      <div class="field" style="flex: 1; min-width: 140px;">
+        <label for="hired_date">Ishga kirgan sana</label>
+        <input type="date" id="hired_date" name="hired_date">
+      </div>
+    </div>
+
+    <div class="toolbar" style="margin-bottom: 0.75rem;">
+      <button type="button" class="btn secondary" id="tab-file">Fayldan yuklash</button>
+      <button type="button" class="btn secondary" id="tab-webcam">Kameradan olish</button>
+    </div>
+
+    <div id="panel-file">
+      <div class="field">
+        <label for="photo">Xodim rasmi</label>
+        <input type="file" id="photo" name="photo" accept="image/*">
+      </div>
+    </div>
+
+    <div id="panel-webcam" style="display: none;">
+      <div style="display: flex; gap: 1rem; align-items: start; flex-wrap: wrap;">
+        <video id="webcam-video" width="280" height="210" autoplay playsinline
+               style="background:#000; border-radius: 8px;"></video>
+        <canvas id="webcam-canvas" width="280" height="210" style="display:none;"></canvas>
+        <div style="display:flex; flex-direction:column; gap:0.5rem;">
+          <img id="webcam-preview" style="width:140px; height:105px; object-fit:cover; border-radius:8px; border:1px solid var(--border); display:none;">
+          <button type="button" class="btn secondary" id="capture-btn">Suratga olish</button>
+        </div>
+      </div>
+      <input type="hidden" name="webcam_image" id="webcam_image">
+    </div>
+
+    <div style="margin-top: 1rem;">
+      <button type="submit" class="btn">Xodimni qo'shish</button>
+    </div>
+  </form>
+</div>
+
+<form method="get" class="toolbar">
+  <div class="field">
+    <label for="department_filter">Bo'lim bo'yicha filtr</label>
+    <select id="department_filter" name="department_id" onchange="this.form.submit()">
+      <option value="">Barchasi</option>
+      {% for d in departments %}
+      <option value="{{ d.id }}" {{ 'selected' if selected_department == d.id }}>{{ d.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if selected_department %}
+  <a class="btn secondary" href="{{ url_for('employees.index') }}">Tozalash</a>
+  {% endif %}
+</form>
+
+{% if employees %}
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 1rem;">
+  {% for e in employees %}
+  <div class="card" style="text-align: center; {{ 'opacity: 0.55;' if e.status != 'active' }}">
+    <img src="{{ url_for('employees.photo', employee_id=e.id) }}"
+         style="width: 84px; height: 84px; object-fit: cover; border-radius: 50%; margin-bottom: 0.6rem;">
+    <div style="font-weight: 600;">{{ e.full_name }}</div>
+    <div style="color: var(--text-muted); font-size: 0.78rem;">{{ e.position or '—' }}</div>
+    <div style="color: var(--accent); font-size: 0.75rem; font-weight: 600; margin: 0.2rem 0 0.75rem;">
+      {{ e.department.name if e.department else "Bo'lim belgilanmagan" }}
+    </div>
+    <div style="display:flex; gap:0.4rem; justify-content:center;">
+      <form method="post" action="{{ url_for('employees.toggle_status', employee_id=e.id) }}">
+        <button type="submit" class="btn secondary" style="font-size: 0.72rem; padding: 0.35rem 0.6rem;">
+          {{ "Faolsizlantirish" if e.status == "active" else "Faollashtirish" }}
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('employees.delete', employee_id=e.id) }}"
+            onsubmit="return confirm('{{ e.full_name }} butunlay o\'chiriladi — davomat tarixi ham yo\'qoladi. Tarixni saqlab qolish uchun o\'chirish emas, \'Faolsizlantirish\'ni tanlang. Davom etilsinmi?');">
+        <button type="submit" class="btn secondary" style="font-size: 0.72rem; padding: 0.35rem 0.6rem;">O'chirish</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card empty-state">Hali birorta ham xodim qo'shilmagan.</div>
+{% endif %}
+{% endblock %}
+
+{% block head %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const tabFile = document.getElementById("tab-file");
+  const tabWebcam = document.getElementById("tab-webcam");
+  const panelFile = document.getElementById("panel-file");
+  const panelWebcam = document.getElementById("panel-webcam");
+  const video = document.getElementById("webcam-video");
+  const canvas = document.getElementById("webcam-canvas");
+  const preview = document.getElementById("webcam-preview");
+  const hiddenInput = document.getElementById("webcam_image");
+  let stream = null;
+
+  async function openWebcam() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 280, height: 210 } });
+      video.srcObject = stream;
+    } catch (err) {
+      alert("Kameraga ruxsat berilmadi yoki topilmadi: " + err.message);
+    }
+  }
+
+  tabFile.addEventListener("click", () => {
+    panelFile.style.display = "block";
+    panelWebcam.style.display = "none";
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  });
+
+  tabWebcam.addEventListener("click", () => {
+    panelFile.style.display = "none";
+    panelWebcam.style.display = "block";
+    document.getElementById("photo").value = "";
+    openWebcam();
+  });
+
+  document.getElementById("capture-btn").addEventListener("click", () => {
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    hiddenInput.value = dataUrl;
+    preview.src = dataUrl;
+    preview.style.display = "block";
+  });
+});
+</script>
+{% endblock %}

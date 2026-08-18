@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Davomat jurnali{% endblock %}
+{% block page_title %}Davomat jurnali{% endblock %}
+{% block page_subtitle %}Oxirgi 500 ta yozuv{% endblock %}
+
+{% block content %}
+<form method="get" class="toolbar">
+  <div class="field">
+    <label for="employee_id">Xodim</label>
+    <select id="employee_id" name="employee_id" onchange="this.form.submit()">
+      <option value="">Barchasi</option>
+      {% for eid, name in employee_options %}
+      <option value="{{ eid }}" {{ 'selected' if selected_employee == eid }}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="from">Sanadan</label>
+    <input type="date" id="from" name="from" value="{{ date_from }}" onchange="this.form.submit()">
+  </div>
+  <div class="field">
+    <label for="to">Sanagacha</label>
+    <input type="date" id="to" name="to" value="{{ date_to }}" onchange="this.form.submit()">
+  </div>
+  {% if selected_employee or date_from or date_to %}
+  <a class="btn secondary" href="{{ url_for('attendance.index') }}">Tozalash</a>
+  {% endif %}
+</form>
+
+<div class="card" style="padding: 0;">
+  <table>
+    <thead>
+      <tr><th>Vaqt</th><th>Xodim</th><th>Hodisa</th><th>Kamera</th><th>Ishonch</th></tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td>{{ log.timestamp }}</td>
+        <td>{{ log.name }}</td>
+        <td><span class="badge {{ log.event_type }}">{{ 'KELDI' if log.event_type == 'in' else 'KETDI' }}</span></td>
+        <td>{{ log.camera_id }}</td>
+        <td>{{ log.similarity }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty-state">Yozuvlar topilmadi.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

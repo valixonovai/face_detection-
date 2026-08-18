@@ -1,0 +1,55 @@
+# Kameralar ro'yxati.
+# source_type: "webcam" -> lokal kompyuter kamerasi (tarmoqsiz sinov uchun)
+# source_type: "rtsp"   -> Hikvision (yoki boshqa ONVIF/RTSP) tarmoq kamerasi
+#   Standart Hikvision RTSP format:
+#     rtsp://<user>:<password>@<ip>:554/Streaming/Channels/<channel>
+#     channel = 101 (asosiy oqim) yoki 102 (kichik oqim, tezroq ishlaydi)
+cameras:
+  - id: pc_webcam
+    name: "Kompyuter kamerasi (test)"
+    source_type: "webcam"
+    device_index: 0
+    direction: "both"
+
+  # - id: entrance_main
+  #   name: "Asosiy kirish eshigi"
+  #   source_type: "rtsp"
+  #   rtsp_url: "rtsp://admin:PASSWORD@192.168.1.64:554/Streaming/Channels/102"
+  #   direction: "both"   # "in", "out" yoki "both" (yo'nalishni aniqlab bo'lmasa)
+
+  # - id: entrance_back
+  #   name: "Orqa eshik"
+  #   source_type: "rtsp"
+  #   rtsp_url: "rtsp://admin:PASSWORD@192.168.1.65:554/Streaming/Channels/102"
+  #   direction: "both"
+
+# Barcha davomat vaqtlari shu mintaqada saqlanadi va ko'rsatiladi.
+# Docker/AWS'da tizim vaqti UTC bo'lgani uchun buni to'g'ri belgilash shart.
+timezone: "Asia/Tashkent"
+
+recognition:
+  # 30-100 xodim uchun buffalo_l aniqroq, buffalo_sc tezroq (kam quvvatli GPU uchun)
+  model_name: "buffalo_l"
+  gpu_id: 0
+  det_size: [640, 640]
+  # Yuzni tanish uchun minimal o'xshashlik (cosine similarity), 0.35-0.45 oralig'i odatiy
+  similarity_threshold: 0.40
+  # Kadrni necha marta o'tkazib yuborish (0 = har bir kadr, 5 = har 5-kadrda bir tekshirish)
+  frame_skip: 4
+
+attendance:
+  # Bir xodim uchun keldi/ketdi yozuvlari orasidagi minimal interval (soniya)
+  debounce_seconds: 300
+  # Shu vaqtdan keyin yangi kun boshlanadi hisoblanadi (kechqurun smena uchun)
+  day_boundary_hour: 4
+
+database:
+  path: "data/attendance.db"
+
+paths:
+  enrolled_faces_dir: "data/enrolled_faces"
+  logs_dir: "data/logs"
+
+dashboard:
+  host: "0.0.0.0"
+  port: 5000
