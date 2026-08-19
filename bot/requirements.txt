@@ -1,0 +1,11 @@
+# Telegram bot uchun yengil bog'liqliklar — GPU/OpenCV/InsightFace kerak
+# emas (kamera ko'rish vazifasi dashboard konteynerida qoladi, bot faqat
+# bazani o'qiydi va dashboard'ning HTTP API'siga so'rov yuboradi).
+python-telegram-bot==21.6
+httpx==0.27.2
+SQLAlchemy==2.0.35
+PyYAML==6.0.2
+tzdata==2024.2
+
+# PostgreSQL bilan ishlash uchun (docker-compose'da standart baza)
+psycopg2-binary==2.9.9

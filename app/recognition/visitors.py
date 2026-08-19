@@ -28,6 +28,11 @@ VISITOR_MATCH_THRESHOLD = 0.32
 # Bitta mehmon uchun ketma-ket yozuvlar orasidagi minimal vaqt (soniya)
 VISITOR_DEBOUNCE_SECONDS = 300
 
+# Mehmon embeddinglari keshini to'liq qayta yuklash oralig'i (soniya).
+# Bitta jarayon ichida qo'shilgan mehmon keshga darhol qo'shiladi (_cache_add);
+# bu faqat boshqa manba (masalan ikkinchi worker) qo'shgan mehmonlarni ko'rish uchun.
+RELOAD_INTERVAL = 20.0
+
 # Yangi mehmon yaratish shartlari — "xodim, lekin noqulay burchak" holatini
 # begona deb yozib yubormaslik uchun.
 # Xodimga o'xshashlik shu qiymatdan past bo'lsagina begona hisoblanadi
@@ -58,17 +63,47 @@ class VisitorRegistry:
         self._snapshot_dir = Path(CONFIG["paths"]["enrolled_faces_dir"]).parent / "visitors"
         self._snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    def _match_existing(self, session, embedding: np.ndarray) -> Visitor | None:
-        visitors = list(session.execute(select(Visitor)).scalars())
-        if not visitors:
-            return None
+        # Mehmon embeddinglari keshi. Avval har begona yuz uchun BARCHA
+        # mehmonlarni bazadan qayta o'qirdik (O(V) so'rov har kadrda) — mehmon
+        # soni ortgani sari sekinlashardi. Endi matritsa xotirada saqlanadi va
+        # yangi mehmon qo'shilganda joyida yangilanadi (bazaga qayta murojaat
+        # qilinmaydi); vaqti-vaqti bilan (RELOAD_INTERVAL) to'liq yangilanadi —
+        # boshqa jarayon/ip tomonidan qo'shilgan mehmonlarni ham ko'rish uchun.
+        self._cache_ids: list[int] = []
+        self._cache_matrix = np.empty((0, 512), dtype=np.float32)
+        self._cache_loaded_at = 0.0
 
-        matrix = np.stack([np.array(v.embedding(), dtype=np.float32) for v in visitors])
-        sims = matrix @ embedding.astype(np.float32)
+    def _ensure_cache(self, session) -> None:
+        now = time.monotonic()
+        if self._cache_ids and (now - self._cache_loaded_at) < RELOAD_INTERVAL:
+            return
+        rows = session.execute(select(Visitor.id, Visitor.embedding_json)).all()
+        self._cache_ids = [vid for vid, _ in rows]
+        self._cache_matrix = (
+            np.stack([np.array(json.loads(emb), dtype=np.float32) for _, emb in rows])
+            if rows
+            else np.empty((0, 512), dtype=np.float32)
+        )
+        self._cache_loaded_at = now
+
+    def _match_existing_id(self, session, embedding: np.ndarray) -> int | None:
+        """Eng o'xshash mehmonning id'sini qaytaradi (keshdan, DB so'rovsiz)."""
+        self._ensure_cache(session)
+        if not self._cache_ids:
+            return None
+        sims = self._cache_matrix @ embedding.astype(np.float32)
         best_idx = int(np.argmax(sims))
         if float(sims[best_idx]) >= VISITOR_MATCH_THRESHOLD:
-            return visitors[best_idx]
+            return self._cache_ids[best_idx]
         return None
+
+    def _cache_add(self, visitor_id: int, embedding: np.ndarray) -> None:
+        """Yangi mehmonni keshga qo'shadi — keyingi kadrda darhol tanilishi uchun."""
+        self._cache_ids.append(visitor_id)
+        row = embedding.astype(np.float32).reshape(1, -1)
+        self._cache_matrix = (
+            row if self._cache_matrix.shape[0] == 0 else np.vstack([self._cache_matrix, row])
+        )
 
     def _save_snapshot(self, frame, bbox) -> str | None:
         """Yuz atrofidan kesib olib saqlaydi (mehmonni keyin tanib olish uchun)."""
@@ -104,14 +139,15 @@ class VisitorRegistry:
         session = self.session_factory()
         try:
             with self._lock:
-                visitor = self._match_existing(session, embedding)
+                visitor_id = self._match_existing_id(session, embedding)
 
-                if visitor is not None:
-                    last = self._last_seen.get(visitor.id)
+                if visitor_id is not None:
+                    last = self._last_seen.get(visitor_id)
                     if last is not None and (time.monotonic() - last) < VISITOR_DEBOUNCE_SECONDS:
                         return None
-                    self._last_seen[visitor.id] = time.monotonic()
+                    self._last_seen[visitor_id] = time.monotonic()
 
+                    visitor = session.get(Visitor, visitor_id)
                     visitor.last_seen = timeutil.now()
                     visitor.seen_count += 1
                     is_new = False
@@ -128,6 +164,7 @@ class VisitorRegistry:
                     session.add(visitor)
                     session.flush()  # visitor.id kerak
                     self._last_seen[visitor.id] = time.monotonic()
+                    self._cache_add(visitor.id, embedding)
                     is_new = True
 
                 session.add(

@@ -1,4 +1,32 @@
+# Uch xizmat birga ishga tushadi:
+#   postgres  — umumiy baza (dashboard, kuzatuv worker'i va bot bir vaqtda
+#               yozadi/o'qiydi; SQLite bunday yuklamaga mos emas — yozishda
+#               tiqilib qoladi, shuning uchun bu yerda Postgres standart)
+#   dashboard — veb-panel + GPU kuzatuv xizmati (o'zgarishsiz, mavjud image)
+#   bot       — Telegram bot: bazani bevosita o'qiydi, kamera jonli holatini
+#               dashboard'ning HTTP API'sidan oladi. GPU/OpenCV kerak emas —
+#               alohida, yengil image.
+#
+# Ishga tushirish:
+#   cp .env.example .env      # POSTGRES_PASSWORD, TELEGRAM_BOT_TOKEN va h.k. yozing
+#   docker compose up -d --build
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-attendance}
+      POSTGRES_USER: ${POSTGRES_USER:-attendance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env faylida berilishi shart}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-attendance} -d ${POSTGRES_DB:-attendance}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   dashboard:
     build: .
     image: attendance-crm:latest
@@ -6,25 +34,36 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Baza va yuz rasmlari konteyner o'chsa ham saqlanib qoladi
+      # Yuz rasmlari va loglar konteyner o'chsa ham saqlanib qoladi.
+      # Davomat/xodim/kamera ma'lumotlari endi Postgres'da — bu volume faqat
+      # fayllar (rasmlar) uchun.
       - attendance-data:/data
       # InsightFace modellari (~300 MB) bir marta yuklanadi
       - model-cache:/models
     environment:
       DATA_DIR: /data
-      # AWS'da RDS PostgreSQL'ga o'tish uchun shu qatorni yoqing:
-      # DATABASE_URL: postgresql+psycopg2://user:parol@rds-endpoint:5432/attendance
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-attendance}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-attendance}
       SIMILARITY_THRESHOLD: "0.40"
       FRAME_SKIP: "4"
       DEBOUNCE_SECONDS: "300"
-      # Hikvision kameralarni shu yerda bering (config.yaml'ni ustidan yozadi).
-      # Parolni bu yerga yozmang — .env faylidan oling (docker compose avtomatik o'qiydi).
-      CAMERAS_JSON: >-
-        [{"id": "entrance_main",
-          "name": "Asosiy kirish eshigi",
-          "source_type": "rtsp",
-          "rtsp_url": "rtsp://${CAMERA_USER}:${CAMERA_PASSWORD}@${CAMERA_HOST}:554/Streaming/Channels/102",
-          "direction": "both"}]
+      # Kameralar endi "Kameralar" sahifasida (UI orqali) boshqariladi va
+      # bazada saqlanadi — bu yerda qayta yozish shart emas. Birinchi marta
+      # avtomatik qo'shib qo'yish uchun xohlasangiz yoqing (parolni .env'dan
+      # oling, bu yerga yozmang):
+      # CAMERAS_JSON: >-
+      #   [{"id": "entrance_main", "name": "Asosiy kirish eshigi",
+      #     "source_type": "rtsp", "host": "${CAMERA_HOST}",
+      #     "username": "${CAMERA_USER}", "password": "${CAMERA_PASSWORD}",
+      #     "brand": "hikvision", "stream_kind": "sub", "role": "entrance"}]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         reservations:
@@ -33,6 +72,25 @@ services:
               count: 1
               capabilities: [gpu]
 
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    image: attendance-bot:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-attendance}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-attendance}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN .env faylida berilishi shart — @BotFather'dan oling}
+      TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
+      DASHBOARD_INTERNAL_URL: http://dashboard:5000
+      BOT_POLL_INTERVAL: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dashboard:
+        condition: service_started
+
 volumes:
   attendance-data:
   model-cache:
+  postgres-data:

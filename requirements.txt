@@ -3,9 +3,14 @@ insightface==0.7.3
 onnxruntime-gpu==1.20.2
 numpy==1.26.4
 PyYAML==6.0.2
+tzdata==2024.2
 SQLAlchemy==2.0.35
 Flask==3.0.3
 python-dateutil==2.9.0.post0
+
+# PostgreSQL bilan ishlash uchun (docker-compose'da standart baza — bot,
+# dashboard va kuzatuv worker'i bir vaqtda yozadi, SQLite bunga mos emas)
+psycopg2-binary==2.9.9
 
 # GPU (CUDA 12 / cuDNN 9) runtime DLL'lari — to'liq CUDA Toolkit o'rnatmasdan
 # onnxruntime-gpu'ni ishlatish uchun. app/gpu_bootstrap.py shularni PATH'ga qo'shadi.

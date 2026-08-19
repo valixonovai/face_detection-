@@ -151,20 +151,67 @@ def department_breakdown(records: list[DayRecord]) -> list[dict]:
 
 
 def daily_trend(session, end_day: date, days: int = 14) -> list[dict]:
-    """Oxirgi N kun uchun kunlik davomat foizi."""
+    """
+    Oxirgi N kun uchun kunlik davomat foizi.
+
+    Har kun uchun alohida so'rov yubormaydi (avval 14 kun = 28+ so'rov edi) —
+    butun oraliq uchun xodimlar va yozuvlar bir marta olinadi, keyin kun
+    bo'yicha xotirada guruhlanadi. Katta bazada ham sahifa tez ochiladi.
+    """
+    if days <= 0:
+        return []
+
+    first_day = end_day - timedelta(days=days - 1)
+    window_start, _ = work_day_bounds(first_day)
+    _, window_end = work_day_bounds(end_day)
+
+    # employee_id -> kutilayotgan ish boshlanish vaqti (bo'lim belgilagan yoki standart)
+    employee_rows = session.execute(
+        select(Employee.id, Department.expected_start_time)
+        .join(Department, Employee.department_id == Department.id, isouter=True)
+        .where(Employee.status == "active")
+    ).all()
+    expected_start = {eid: (start or DEFAULT_START) for eid, start in employee_rows}
+    total_employees = len(expected_start)
+
+    logs = session.execute(
+        select(AttendanceLog.employee_id, AttendanceLog.event_type, AttendanceLog.timestamp)
+        .where(AttendanceLog.timestamp >= window_start, AttendanceLog.timestamp < window_end)
+        .order_by(AttendanceLog.timestamp)
+    ).all()
+
+    # Har bir kunning chegarasini oldindan hisoblab, log'larni shu kunlarga taqsimlaymiz.
+    day_list = [first_day + timedelta(days=i) for i in range(days)]
+    bounds = [work_day_bounds(d) for d in day_list]
+
+    # employee_id -> kun indeksi -> (first_in, last_out)
+    per_day: list[dict[int, list]] = [dict() for _ in day_list]
+    for employee_id, event_type, ts in logs:
+        for idx, (day_start, day_end) in enumerate(bounds):
+            if day_start <= ts < day_end:
+                slot = per_day[idx].setdefault(employee_id, [None, None])
+                if event_type == "in" and slot[0] is None:
+                    slot[0] = ts
+                elif event_type == "out":
+                    slot[1] = ts
+                break
+
     trend = []
-    for offset in range(days - 1, -1, -1):
-        day = end_day - timedelta(days=offset)
-        records = day_records(session, day)
-        summary = day_summary(records)
+    for day, day_logs in zip(day_list, per_day):
+        present = sum(1 for check_in, _ in day_logs.values() if check_in is not None)
+        late = sum(
+            1
+            for employee_id, (check_in, _) in day_logs.items()
+            if check_in is not None and check_in.time() > expected_start.get(employee_id, DEFAULT_START)
+        )
         trend.append(
             {
                 "date": day.isoformat(),
                 "label": day.strftime("%d.%m"),
-                "present": summary["present"],
-                "absent": summary["absent"],
-                "late": summary["late"],
-                "attendance_rate": summary["attendance_rate"],
+                "present": present,
+                "absent": total_employees - present,
+                "late": late,
+                "attendance_rate": round(present / total_employees * 100) if total_employees else 0,
             }
         )
     return trend

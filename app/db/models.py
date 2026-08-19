@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, time
 
-from sqlalchemy import String, Integer, Boolean, DateTime, Time, Date, ForeignKey, Text
+from sqlalchemy import String, Integer, BigInteger, Boolean, DateTime, Time, Date, ForeignKey, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app import timeutil
@@ -199,3 +199,40 @@ class PresenceEvent(Base):
 
     employee: Mapped["Employee | None"] = relationship(back_populates="presence_events")
     visitor: Mapped["Visitor | None"] = relationship(back_populates="sightings")
+
+
+class BotSubscriber(Base):
+    """
+    Telegram botga obuna bo'lgan chat. `/start` bosilganda avtomatik yaratiladi.
+
+    Bu davomat ma'lumotlariga kirish huquqi berilgan ro'yxat emas — kirish
+    huquqi `TELEGRAM_ADMIN_IDS` env orqali beriladi (bot/config.py). Bu
+    jadval faqat "kimga jonli bildirishnoma yuborish kerak"ni belgilaydi.
+    """
+
+    __tablename__ = "bot_subscribers"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    username: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Davomat hodisalari (keldi/ketdi) haqida jonli xabar
+    notify_attendance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Harakat/begona hodisalari — sukut bo'yicha o'chiq, tez-tez bo'lgani uchun
+    notify_presence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=timeutil.now)
+
+
+class BotState(Base):
+    """
+    Botning bitta qatorli holati — oxirgi yuborilgan hodisa raqamlarini
+    saqlaydi. Bot qayta ishga tushganda eski hodisalarni qayta yubormasligi
+    (yoki yangilarini o'tkazib yubormasligi) uchun kerak.
+    """
+
+    __tablename__ = "bot_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # doim 1 qator
+    last_attendance_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_presence_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
