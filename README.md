@@ -8,19 +8,47 @@ Tizim tarkibida: xodimlar va bo'limlar boshqaruvi, davomat jurnali, statistika
 (kechikish, ish soatlari, bo'limlar kesimi), jonli kamera oynasi va tizim
 ko'rsatkichlari paneli.
 
-## Tez boshlash (Docker — tavsiya etiladi)
+## Tez boshlash — boshqa kompyuterda ishga tushirish
+
+**Talab qilinadi:** [Docker](https://docs.docker.com/get-docker/) + Docker
+Compose. Yuz tanish uchun NVIDIA GPU tavsiya etiladi (pastga qarang, GPU'siz
+ham ishlaydi).
 
 ```
-cp .env.example .env      # kamera IP/login/parolini yozing
-docker compose up -d
+git clone https://github.com/valixonovai/face_detection-.git
+cd face_detection-
+cp .env.example .env
 ```
-Brauzerda `http://localhost:5000`.
 
-GPU'siz mashinada ishlatish uchun `docker-compose.yml` ichidagi `deploy.resources`
-blokini o'chiring va `requirements.txt`da `onnxruntime-gpu` o'rniga
-`onnxruntime` yozing (tanish sekinroq, lekin ishlaydi).
+`.env` faylini oching va **shu uchtasini albatta to'ldiring** (bo'lmasa
+ishga tushmaydi):
 
-## Lokal o'rnatish (Docker'siz)
+| O'zgaruvchi | Qayerdan olinadi |
+|---|---|
+| `POSTGRES_PASSWORD` | O'zingiz o'ylab toping (baza paroli) |
+| `TELEGRAM_BOT_TOKEN` | Telegram'da [@BotFather](https://t.me/BotFather) → `/newbot` |
+| `TELEGRAM_ADMIN_IDS` | Telegram'da [@userinfobot](https://t.me/userinfobot) → `/start` — sizga ID'ingizni beradi |
+
+So'ng:
+
+```
+docker compose up -d --build
+```
+
+Birinchi ishga tushirish 5–10 daqiqa oladi (GPU model va image'lar yuklanadi).
+Tayyor bo'lgach:
+
+- **Dashboard:** `http://<server-ip>:5000` — "Kameralar" sahifasidan
+  kameralaringizni qo'shing (IP, login, parol alohida kiritiladi).
+- **Telegram bot:** o'zingiz yaratgan botga `/start` yozing.
+
+**GPU yo'q kompyuterda:** `docker-compose.yml`даgi `dashboard` xizmatidan
+`deploy.resources` blokini o'chiring va `requirements.txt`да
+`onnxruntime-gpu` o'rniga `onnxruntime` yozing (tanish sekinroq, lekin ishlaydi).
+
+Holatni tekshirish: `docker compose ps` va `docker compose logs -f`.
+
+## Lokal o'rnatish (Docker'siz, faqat dashboard — rivojlantirish uchun)
 
 ```
 conda create -n attendance python=3.10 -y
@@ -136,20 +164,9 @@ boshqariladi. Bundan tashqari **jonli bildirishnoma**: xodim kirish kamerasida
 tanilib KELDI/KETDI yozilganda, bot obuna bo'lgan foydalanuvchilarga darhol
 xabar yuboradi — kim, qachon, qaysi kamera/bo'lim.
 
-### Sozlash
-
-1. Telegram'da [@BotFather](https://t.me/BotFather) bilan `/newbot` — token oling.
-2. O'z Telegram `user_id`'ingizni bilish uchun [@userinfobot](https://t.me/userinfobot)
-   ga `/start` yozing (yoki botni tokensiz ishga tushirsangiz ham, ruxsatsiz
-   foydalanuvchi `/start` bosganda bot unga o'z ID'sini ko'rsatadi).
-3. `.env` faylida:
-   ```
-   TELEGRAM_BOT_TOKEN=<BotFather bergan token>
-   TELEGRAM_ADMIN_IDS=<sizning user_id, kerak bo'lsa vergul bilan bir nechta>
-   ```
-   **`TELEGRAM_ADMIN_IDS` bo'sh bo'lsa — hech kim botdan foydalana olmaydi**
-   (xavfsiz sukut holat: davomat ma'lumotlari nozik, tasodifan hammaga ochiq
-   qolmasligi kerak).
+Sozlash — yuqoridagi "Tez boshlash"да (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS`).
+Eslatma: `TELEGRAM_ADMIN_IDS` bo'sh bo'lsa hech kim botdan foydalana olmaydi
+(xavfsiz sukut holat — davomat ma'lumotlari nozik).
 
 ### Menyu
 
@@ -207,9 +224,10 @@ qurilmasini bir vaqtda ocholmaydi — ikkisidan faqat bittasini ishlating.
 5. Kechikish va ish soatlari xodim bo'limiga belgilangan ish vaqtiga nisbatan
    hisoblanadi (`app/analytics.py`).
 
-## Docker'da to'liq ishga tushirish (dashboard + bot + PostgreSQL)
+## Docker xizmatlari haqida ma'lumot
 
-`docker-compose.yml` uch xizmatni birga ishga tushiradi:
+`docker-compose.yml` (ishga tushirish — yuqorida, "Tez boshlash") uch
+xizmatdan iborat:
 
 | Xizmat | Vazifasi | Talab |
 |---|---|---|
@@ -222,20 +240,10 @@ bot) bir vaqtda bazaga yozadi/o'qiydi. SQLite bir nechta jarayondan bir vaqtda
 yozishga yaxshi chidamaydi (fayl darajasida qulflanadi) — yuklama ortganда
 "database is locked" xatolariga olib keladi. PostgreSQL bunga mo'ljallangan.
 
-```
-cp .env.example .env
-# .env faylida to'ldiring: POSTGRES_PASSWORD, TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_IDS
-docker compose up -d --build
-```
-
-Birinchi marta ishga tushirilganda `dashboard` bazani yaratadi va
-`config.yaml`dagi boshlang'ich kamerani ko'chiradi; qolgan kameralarni
-"Kameralar" sahifasidan qo'shing (login/parol alohida kiritiladi — xavfsiz).
-
-**Eslatma — lokal SQLite'dan Postgres'ga o'tish:** agar avval lokal (SQLite)
-rejimda kameralar/xodimlar qo'shgan bo'lsangiz, ular Postgres'ga avtomatik
-ko'chmaydi (ikkalasi mustaqil baza). Kameralarni "Kameralar" sahifasidan
-qayta qo'shish kifoya (bir necha daqiqa ish).
+**Eslatma — eski SQLite ma'lumotidan o'tish:** agar avval lokal (Docker'siz,
+SQLite) rejimda kameralar/xodimlar qo'shgan bo'lsangiz, ular Postgres'ga
+avtomatik ko'chmaydi (ikkalasi mustaqil baza). Kameralarni "Kameralar"
+sahifasidan qayta qo'shish kifoya (bir necha daqiqa ish).
 
 Loglarni ko'rish: `docker compose logs -f bot` yoki `docker compose logs -f dashboard`.
 
